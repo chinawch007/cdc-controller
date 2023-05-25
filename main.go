@@ -50,7 +50,6 @@ func (sc *CDCController) GetSegmentsAddress() {
 	}
 }
 
-//func (sc *CDCController) InitOneConn(address Address) (conn *pgx.Conn) { //要加error吗？
 func InitOneConn(option ConnOption, isMaster bool) (conn *pgx.Conn) { //要加error吗？
 	var config pgx.ConnConfig
 
@@ -101,8 +100,6 @@ func (sc *CDCController) ExportSnapshot() (snapshotId string) {
 		fmt.Println(err)
 	}
 
-	//defer tx.Rollback()
-
 	rows, err := tx.Query("select * from pg_export_snapshot();")
 	if err != nil {
 		fmt.Println(err)
@@ -150,7 +147,6 @@ func (sc *CDCController) GetSnapshotContent(snapshotId string) (snapshotContent 
 	query += "');"
 
 	fmt.Println(query)
-	//rows, err := sc.connMasterCommand.Query("select * from get_snapshot_content('%s');", snapshotId)
 
 	rows, err := sc.connMasterCommand.Query(query)
 	if err != nil {
@@ -218,20 +214,15 @@ func (sc *CDCController) DispatchSnapshot(snapshotContent string) {
 	query += snapshotContent
 	query += "');"
 
-	/*
-		_, err := sc.connMasterCommand.Query(query)
-		if err != nil {
-			fmt.Println(err)
-		}
-	*/
+	_, err := sc.connMasterCommand.Query(query)
+	if err != nil {
+		fmt.Println(err)
+	}
+
 	//实在不行把回车替换掉。
 	fmt.Println(query)
 
-	//先拿7000跑通，master的插件代码得另外写
-	for i, conn := range sc.connSegments {
-		if i != 0 {
-			continue
-		}
+	for _, conn := range sc.connSegments {
 		_, err := conn.Query(query)
 		if err != nil {
 			fmt.Println(err)
@@ -242,18 +233,12 @@ func (sc *CDCController) DispatchSnapshot(snapshotContent string) {
 //之前还想着要搞几个routine出来同时start，现在看来没必要。
 func (sc *CDCController) StartReplication() {
 
-	/*
-		err := sc.repConnMaster.StartReplication("slot1", 0, -1)
-		if err != nil {
-			fmt.Println(err)
-		}
-	*/
+	err := sc.repConnMaster.StartReplication("slot1", 0, -1)
+	if err != nil {
+		fmt.Println(err)
+	}
 
-	//这里也先只跑一下7000
-	for i, repConn := range sc.repConnSegments {
-		if i != 0 {
-			continue
-		}
+	for _, repConn := range sc.repConnSegments {
 		err := repConn.StartReplication("slot1", 0, -1)
 		if err != nil {
 			fmt.Println(err)
@@ -321,6 +306,7 @@ func NewServerController(opts *Options) (sc *CDCController) {
 // 看下new和prepare，怎么把代码两边分一下。。。
 func (sc *CDCController) Prepare() {
 
+	sc.CreateReplcationSlot()
 	sc.StartReplication()
 	sc.CommitOneTransaction()
 
